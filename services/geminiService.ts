@@ -1,43 +1,45 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Read the API key from Vite's runtime env. In dev use a `.env.local` containing
+// VITE_GEMINI_API_KEY=...
+const apiKey = (import.meta.env as any).VITE_GEMINI_API_KEY as string | undefined;
 
-const responseSchema: Schema = {
-  type: Type.OBJECT,
+// Use a plain object schema to avoid depending on SDK types at build-time.
+const responseSchema: any = {
+  type: "object",
   properties: {
-    niche: { type: Type.STRING, description: "The specific content niche of the channel." },
-    targetAudience: { type: Type.STRING, description: "Description of the target audience." },
-    channelOverview: { type: Type.STRING, description: "A brief summary of the analyzed channel." },
+    niche: { type: "string", description: "The specific content niche of the channel." },
+    targetAudience: { type: "string", description: "Description of the target audience." },
+    channelOverview: { type: "string", description: "A brief summary of the analyzed channel." },
     competitors: {
-      type: Type.ARRAY,
+      type: "array",
       items: {
-        type: Type.OBJECT,
+        type: "object",
         properties: {
-          name: { type: Type.STRING },
-          estimatedSubscribers: { type: Type.STRING, description: "Estimated subscriber count (e.g. '100k+')." },
-          avgViewsPerVideo: { type: Type.NUMBER, description: "Estimated average views per video as a raw number." },
-          strength: { type: Type.STRING, description: "Key competitive advantage." },
-          topVideoTitle: { type: Type.STRING, description: "Title of a high-performing video." },
-          whyItWorks: { type: Type.STRING, description: "Brief analysis of why that video succeeded." },
+          name: { type: "string" },
+          estimatedSubscribers: { type: "string", description: "Estimated subscriber count (e.g. '100k+')." },
+          avgViewsPerVideo: { type: "number", description: "Estimated average views per video as a raw number." },
+          strength: { type: "string", description: "Key competitive advantage." },
+          topVideoTitle: { type: "string", description: "Title of a high-performing video." },
+          whyItWorks: { type: "string", description: "Brief analysis of why that video succeeded." },
         },
         required: ["name", "estimatedSubscribers", "avgViewsPerVideo", "strength", "topVideoTitle", "whyItWorks"],
       },
     },
     winningPatterns: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
+      type: "array",
+      items: { type: "string" },
       description: "List of 3-5 repeatable strategies observed in top videos.",
     },
     recommendations: {
-      type: Type.ARRAY,
+      type: "array",
       items: {
-        type: Type.OBJECT,
+        type: "object",
         properties: {
-          title: { type: Type.STRING },
-          description: { type: Type.STRING },
-          impactLevel: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
-          difficulty: { type: Type.STRING, enum: ["Easy", "Moderate", "Hard"] },
+          title: { type: "string" },
+          description: { type: "string" },
+          impactLevel: { type: "string", enum: ["High", "Medium", "Low"] },
+          difficulty: { type: "string", enum: ["Easy", "Moderate", "Hard"] },
         },
         required: ["title", "description", "impactLevel", "difficulty"],
       },
@@ -47,20 +49,37 @@ const responseSchema: Schema = {
 };
 
 export const analyzeYouTubeChannel = async (url: string): Promise<AnalysisResult> => {
+  // If the API key is not configured, return a mocked result so the UI is usable for testing.
+  if (!apiKey) {
+    console.warn("VITE_GEMINI_API_KEY not set — returning mock analysis result.");
+    return {
+      niche: "Sample Niche",
+      targetAudience: "Beginners and enthusiasts interested in sample content",
+      channelOverview: "This is a mocked analysis result because the Gemini API key was not provided.",
+      competitors: [
+        {
+          name: "Mock Channel A",
+          estimatedSubscribers: "120k+",
+          avgViewsPerVideo: 45000,
+          strength: "Consistent upload schedule and strong thumbnails",
+          topVideoTitle: "How to Sample",
+          whyItWorks: "Clear hook, concise value, and strong retention",
+        },
+      ],
+      winningPatterns: ["Short, punchy intros", "Clear step-by-step tutorials", "Branded thumbnails"],
+      recommendations: [
+        { title: "Improve thumbnails", description: "Use bold text and high-contrast faces.", impactLevel: 'High', difficulty: 'Easy' },
+      ],
+    } as AnalysisResult;
+  }
+
   try {
-    const prompt = `
-      Analyze the YouTube channel or video at this URL: ${url}.
-      
-      Your task is to:
-      1. Identify the specific content niche.
-      2. Identify 3-5 top competitors in this niche.
-      3. Estimate their performance metrics based on public knowledge.
-      4. Analyze why their top videos perform well.
-      5. Extract repeatable patterns.
-      6. Provide actionable recommendations for a creator in this niche to outperform them.
-      
-      Use Google Search to find real, up-to-date information about the channel and its competitors.
-    `;
+    // Dynamically import the SDK at runtime to avoid bundling issues in the browser build step.
+    const genai = await import('@google/genai');
+    const { GoogleGenAI } = genai as any;
+    const ai = new GoogleGenAI({ apiKey });
+
+    const prompt = `Analyze the YouTube channel or video at this URL: ${url}.\n\nYour task is to: \n1. Identify the specific content niche.\n2. Identify 3-5 top competitors in this niche.\n3. Estimate their performance metrics based on public knowledge.\n4. Analyze why their top videos perform well.\n5. Extract repeatable patterns.\n6. Provide actionable recommendations for a creator in this niche to outperform them.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
